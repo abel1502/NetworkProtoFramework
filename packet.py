@@ -23,14 +23,6 @@ class Serializable(object, metaclass=abc.ABCMeta):
         pass
 
 
-class Packet(Serializable, metaclass=abc.ABCMeta):
-    pass
-
-
-class Structure(object):
-    pass
-
-
 class Field(Serializable):
     def __init__(self, definition):
         """
@@ -233,3 +225,14 @@ class StructFD(FixedLengthFD):
 
 # class PaddedFixedFD(FixedLengthFD):
 #     valueType = bytes
+
+
+# TODO: Discriminated union FD; Packet FD, ...
+
+
+class Packet(Serializable, metaclass=abc.ABCMeta):
+    pass
+
+
+class Structure(object):
+    pass
