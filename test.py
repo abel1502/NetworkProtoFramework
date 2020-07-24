@@ -77,7 +77,6 @@ class FieldTestCase(unittest.TestCase):
         else:
             self.assertEqual(data, field.value)
 
-
     def test_FixedLengthFD(self):
         data = b'Test data'
         badData = b'Bad data!'
@@ -113,6 +112,28 @@ class FieldTestCase(unittest.TestCase):
         badData = (False, 7, b"Bye")
         fd = packet.StructFD("Test", format)
         self._test_FD(fd, data, badData)
+
+
+class TestPacket(packet.Packet):
+    __structure__ = (packet.IntFD("TPID", 1).setDefault(17), packet.VarLengthFD("TPVAL", 1).setMaxLength(32))
+
+
+class PacketTestCase(unittest.TestCase):
+    def setUp(self):
+        defaultTO = 0.5
+        self.t1, self.t2 = transportPair(defaultTimeout=defaultTO)
+
+    def tearDown(self):
+        self.t1.close()
+        self.t2.close()
+
+    def test_normalExchange(self):
+        sp = TestPacket(TPVAL=b"Hello there")
+        sp.write(self.t1)
+        rp = TestPacket()
+        rp.read(self.t2)
+        self.assertEqual(sp.TPID, rp.TPID)
+        self.assertEqual(sp.TPVAL, rp.TPVAL)
 
 
 if __name__ == '__main__':
