@@ -67,6 +67,9 @@ class FieldDef(object, metaclass=abc.ABCMeta):
     def read(self, tp):
         pass
 
+    def checkValue(self, value):
+        return True
+
 
 class FixedLengthFD(FieldDef):
     valueType = bytes
@@ -81,7 +84,7 @@ class FixedLengthFD(FieldDef):
         :type value: bytes
         :type tp: transport.Transport
         """
-        assert len(value) == self.length
+        assert self.checkValue(value)
         tp.write(value)
 
     def read(self, tp):
@@ -90,24 +93,28 @@ class FixedLengthFD(FieldDef):
         :rtype: bytes
         """
         value = tp.read(self.length)
+        assert self.checkValue(value)
         return value
+
+    def checkValue(self, value):
+        return isinstance(value, (bytes, bytearray)) and len(value) == self.length
 
 
 class VarLengthFD(FieldDef):
     def __init__(self, name, lengthFieldSize):
         super().__init__(name)
-        self.lengthField = IntFD(f"{name}_length", lengthFieldSize)
+        self.lengthFD = IntFD(f"{name}_length", lengthFieldSize)
 
     def setMinLength(self, minLength):
-        self.lengthField.setMin(minLength)
+        self.lengthFD.setMin(minLength)
         return self
 
     def setMaxLength(self, maxLength):
-        self.lengthField.setMax(maxLength)
+        self.lengthFD.setMax(maxLength)
         return self
 
     def setLengthOrder(self, order):
-        self.lengthField.setOrder(order)
+        self.lengthFD.setOrder(order)
         return self
 
     def write(self, value, tp):
@@ -115,7 +122,8 @@ class VarLengthFD(FieldDef):
         :type value: bytes
         :type tp: transport.Transport
         """
-        self.lengthField.write(len(value), tp)
+        assert self.checkValue(value)
+        self.lengthFD.write(len(value), tp)
         tp.write(value)
 
     def read(self, tp):
@@ -123,14 +131,19 @@ class VarLengthFD(FieldDef):
         :type tp: transport.Transport
         :rtype: bytes
         """
-        length = self.lengthField.read(tp)
+        length = self.lengthFD.read(tp)
         value = tp.read(length)
+        assert self.checkValue(value)
         return value
 
+    def checkValue(self, value):
+        return isinstance(value, (bytes, bytearray))
 
-class IntFD(FixedLengthFD):
+
+class IntFD(FieldDef):
     def __init__(self, name, length):
-        super().__init__(name, length)
+        super().__init__(name)
+        self.innerFD = FixedLengthFD(f"{name}_inner", length)
         self.min = None
         self.max = None
         self.order = "big"
@@ -158,68 +171,86 @@ class IntFD(FixedLengthFD):
         :type value: int
         :type tp: transport.Transport
         """
-        assert self.min is None or self.min <= value
-        assert self.max is None or value < self.max
-        super().write(value.to_bytes(self.length, self.order, signed=self.signed), tp)
+        assert self.checkValue(value)
+        self.innerFD.write(value.to_bytes(self.innerFD.length, self.order, signed=self.signed), tp)
 
     def read(self, tp):
         """
         :type tp: transport.Transport
         :rtype: int
         """
-        value = int.from_bytes(super().read(tp), self.order, signed=self.signed)
-        assert self.min is None or self.min <= value
-        assert self.max is None or value < self.max
+        value = int.from_bytes(self.innerFD.read(tp), self.order, signed=self.signed)
+        assert self.checkValue(value)
         return value
 
+    def checkValue(self, value):
+        return isinstance(value, int) and (self.min is None or self.min <= value) and (self.max is None or value < self.max)
 
-class FloatFD(FixedLengthFD):
+
+class FloatFD(FieldDef):
     def __init__(self, name):
-        super().__init__(name, 4)
+        super().__init__(name)
+        self.innerFD = FixedLengthFD(f"{name}_inner", 4)
 
     def write(self, value, tp):
         """
         :type value: float
         :type tp: transport.Transport
         """
-        super().write(struct.pack(">f", value), tp)
+        assert self.checkValue(value)
+        self.innerFD.write(struct.pack(">f", value), tp)
 
     def read(self, tp):
         """
         :type tp: transport.Transport
         :rtype: float
         """
-        value, = struct.unpack(">f", super().read(tp))
+        value, = struct.unpack(">f", self.innerFD.read(tp))
+        assert self.checkValue(value)
         return value
 
+    def checkValue(self, value):
+        return isinstance(value, float)
 
-class StructFD(FixedLengthFD):
+
+class StructFD(FieldDef):
     def __init__(self, name, structDef):
+        super().__init__(name)
         if isinstance(structDef, str):
             structDef = struct.Struct(structDef)
-        super().__init__(name, structDef.size)
         self.struct = structDef
+        self.innerFD = FixedLengthFD(f"{name}_inner", self.struct.size)
 
     def write(self, value, tp):
         """
         :type value: tuple
         :type tp: transport.Transport
         """
-        super().write(self.struct.pack(*value), tp)
+        assert self.checkValue(value)
+        self.innerFD.write(self.struct.pack(*value), tp)
 
     def read(self, tp):
         """
         :type tp: transport.Transport
         :rtype: tuple
         """
-        value = self.struct.unpack(super().read(tp))
+        value = self.struct.unpack(self.innerFD.read(tp))
+        assert self.checkValue(value)
         return value
 
+    def checkValue(self, value):
+        if not isinstance(value, tuple):
+            return False
+        try:
+            self.struct.pack(*value)
+        except struct.error:
+            return False
+        return True
 
-class SerializeableFD(FieldDef):
+
+class SerializableFD(FieldDef):
     def __init__(self, name, packetType):
         super().__init__(name)
-        assert issubclass(packetType, Packet)
         self.packetType = packetType
 
     def write(self, value, tp):
@@ -227,6 +258,7 @@ class SerializeableFD(FieldDef):
         :type value: Serializable
         :type tp: transport.Transport
         """
+        assert self.checkValue(value)
         value.write(tp)
 
     def read(self, tp):
@@ -234,7 +266,55 @@ class SerializeableFD(FieldDef):
         :type tp: transport.Transport
         :rtype: Serializable
         """
-        return self.packetType().read(tp)  # ?
+        value = self.packetType().read(tp)
+        assert self.checkValue(value)
+        return value
+
+    def checkValue(self, value):
+        return isinstance(value, self.packetType)
+
+
+class StringFD(FieldDef):
+    def __init__(self, name, lengthFieldSize):
+        super().__init__(name)
+        self.innerFD = VarLengthFD(f"{name}_inner", lengthFieldSize)
+        self.encoding = "utf-8"
+
+    def setMinLength(self, minLength):
+        self.innerFD.setMinLength(minLength)
+        return self
+
+    def setMaxLength(self, maxLength):
+        self.innerFD.setMaxLength(maxLength)
+        return self
+
+    def setLengthOrder(self, order):
+        self.innerFD.setLengthOrder(order)
+        return self
+
+    def setEncoding(self, encoding):
+        self.encoding = encoding
+        return self
+
+    def write(self, value, tp):
+        """
+        :type value: str
+        :type tp: transport.Transport
+        """
+        assert self.checkValue(value)
+        self.innerFD.write(value.encode(self.encoding), tp)
+
+    def read(self, tp):
+        """
+        :type tp: transport.Transport
+        :rtype: str
+        """
+        value = self.innerFD.read(tp).decode(self.encoding)
+        assert self.checkValue(value)
+        return value
+
+    def checkValue(self, value):
+        return isinstance(value, str)
 
 
 # class PaddedFixedFD(FixedLengthFD):
@@ -274,7 +354,8 @@ class Packet(Serializable, metaclass=abc.ABCMeta):
         return True
 
     def hasField(self, name):
-        return name in self.__fields__
+        # Not hasattr because that calls getattr internally
+        return "__fields__" in dir(self) and name in self.__fields__
 
     def getField(self, name, asValue=True):
         field = self.__fields__[name]

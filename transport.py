@@ -53,7 +53,7 @@ class Transport(object):
         except socket.timeout:
             raise Timeout("Transport.write")
         except socket.error as e:
-            logging.debug("[ERROR] Transport.write {}", e)
+            logging.error("[ERROR] Transport.write {}", e)
             raise NetworkError("Transport.write", e)
 
     def read(self, amount):
@@ -79,7 +79,7 @@ class Transport(object):
             self.socket.settimeout(oldTimeout)
             return bytes(data)
         except socket.error as e:
-            logging.debug("[ERROR] Transport.read {}", e)
+            logging.error("[ERROR] Transport.read {}", e)
             raise NetworkError("Transport.read", e)
 
     def close(self):

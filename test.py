@@ -1,4 +1,5 @@
 import unittest
+import logging
 import transport
 import socket
 import packet
@@ -113,9 +114,11 @@ class FieldTestCase(unittest.TestCase):
         fd = packet.StructFD("Test", format)
         self._test_FD(fd, data, badData)
 
+    # TODO: Other FDs
+
 
 class TestPacket(packet.Packet):
-    __structure__ = (packet.IntFD("TPID", 1).setDefault(17), packet.VarLengthFD("TPVAL", 1).setMaxLength(32))
+    __structure__ = (packet.IntFD("TPID", 1).setDefault(17), packet.StringFD("TPVAL", 1).setMaxLength(32))
 
 
 class PacketTestCase(unittest.TestCase):
@@ -128,13 +131,34 @@ class PacketTestCase(unittest.TestCase):
         self.t2.close()
 
     def test_normalExchange(self):
-        sp = TestPacket(TPVAL=b"Hello there")
+        sp = TestPacket(TPVAL="Hello there")
         sp.write(self.t1)
         rp = TestPacket()
         rp.read(self.t2)
         self.assertEqual(sp.TPID, rp.TPID)
         self.assertEqual(sp.TPVAL, rp.TPVAL)
 
+    def test_isComplete(self):
+        p = TestPacket(TPVAL="Hello there")
+        self.assertTrue(p.isComplete())
+        p = TestPacket()
+        self.assertFalse(p.isComplete())
+
+    def test_update(self):
+        data = "Something"
+        p = TestPacket()
+        self.assertNotEqual(p.TPVAL, data)
+        p.update({"TPVAL": data})
+        self.assertEqual(p.TPVAL, data)
+
+    def test_hasField(self):
+        p = TestPacket()
+        self.assertTrue(p.hasField("TPID"))
+        self.assertFalse(p.hasField("Non-existent field"))
+
+    # TODO: Probably more tests, but I'm lazy
+
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
     unittest.main()

@@ -2,7 +2,7 @@ import logging
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(filename="npf.log", level=logging.INFO)
     pass
 
 
