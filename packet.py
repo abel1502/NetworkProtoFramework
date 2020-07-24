@@ -291,3 +291,9 @@ class Packet(Serializable, metaclass=abc.ABCMeta):
             return self.getField(name)
         raise AttributeError
 
+    def __setattr__(self, name, value):
+        if self.hasField(name):
+            self.setField(name, value)
+        else:
+            super().__setattr__(name, value)
+
